@@ -10,7 +10,7 @@ var connection = mysql.createConnection({
     port: process.env.DB_PORT,
     user: process.env.DB_USER,
     password: process.env.DB_PASS,
-    database: process.env.DB_NAME
+    database: process.env.DB_DATABASE
 });
 
 connection.connect(function (err) {
@@ -19,71 +19,87 @@ connection.connect(function (err) {
 });
 
 function runSearchPrompt() {
-    inquirer
-        .prompt({
-            name: "department",
-            type: "list",
-            message: "What department would you like see products from?",
-            choices: [
-                "Produce",
-                "Dairy",
-                "Refrigerated",
-                "Frozen",
-                "Drinks",
-                "Exit"
-            ]
-        })
-        .then(function (answer) {
-            displayProduct(answer.department);
-        });
-}
-
-function displayProduct(department) {
-    var query = "SELECT item_id,product_name,department_name,price,stock_quantity FROM products WHERE department = " + department;
-    connection.query(query, function (err, res) {
+    connection.query('SELECT * FROM products', function (err, res) {
+        if (err) throw err;
+        console.log('');
+        console.log('--Inventory--');
+        console.log('');
         for (var i = 0; i < res.length; i++) {
-            console.log(
-                "Purchase ID: " +
-                res[i].item_id +
-                " || Product: " +
-                res[i].product_name +
-                " || Price: " +
-                res[i].price +
-                " || Stock: " +
-                res[i].stock_quantity
-            );
+            console.log('Item ID: ' + res[i].id);
+            console.log('Product: ' + res[i].product);
+            console.log('Department: ' + res[i].department);
+            console.log('Price: ' + res[i].price);
+            console.log('Quantity Left: ' + res[i].quantity);
+            console.log(' ');
+            console.log(' ');
         }
-        purchaseProduct();
+
+        start();
     });
 }
 
-function purchaseProduct() {
-    inquirer
-        .prompt({
-            name: "purchase",
-            type: "input",
-            message: "Please enter the Purchase ID for the item you would like to buy"
-        })
-        .then(answers => {
-            var product = answers.purchase;
-        })
-    inquirer
-        .prompt({
-            name: "quantity",
-            type: "input",
-            message: "How many of that product would you like to buy?"
-        })
-        .then(answers => {
-            var quantity = answers.quantity;
-            transaction();
-        })
+function start() {
+    connection.query("SELECT * FROM products", function (err, res) {
+        if (err) throw console.log("connection error:" + err);
+        inquirer
+            .prompt([
+                {
+                    name: 'selectId',
+                    type: 'input',
+                    message: 'Enter the id number you want to purchase:',
+                },
+                {
+                    name: 'amountBought',
+                    type: 'input',
+                    message: 'How many would you like?',
+                }
+            ]).then(function (answers) {
+                var query = "SELECT * FROM products WHERE ?";
+                connection.query(query, {
+                    id: answers.selectId
+                }, function (err, res) {
+                    var inStock = res[0].quantity;
+                    var itemBought = answers.amountBought;
+                    if (inStock >= itemBought) {
+                        var leftInStock = inStock - itemBought;
+                        var totalPrice = res[0].price * itemBought;
+                        var itemPurchased = res[0].product;
+                        console.log(totalPrice + "  total price of items bought");
+                        connection.query(
+                            "UPDATE products SET ? WHERE ?", [
+                                {
+                                    quantity: leftInStock
+                                },
+                                {
+                                    id: answers.selectId
+                                }
+                            ],
+                            function (error) {
+                                if (error) throw err;
+                                console.log("==============================================");
+                                console.log("\n\r");
+                                console.log("Order details:");
+                                console.log("Item bought " + itemPurchased);
+                                console.log("Quantity bought " + itemBought + " for $" + res[0].price);
+                                console.log("Total Cost: $" + totalPrice);
+                                console.log("\n\r");
+                                console.log("Thank you for shopping with us.");
+                                console.log("==============================================");
+                                products();
+                            }
+                        );
+                    } else {
+                        console.log("==============================================");
+                        console.log("\n\r");
+                        console.log("Not enough of that product");
+                        console.log("\n\r");
+                        console.log("==============================================");
+                        runSearchPrompt();
 
-;}
+                    }
 
-function transaction() {
-var query = "UPDATE products SET quantity = quantity - ? WHERE ?";
-connection.query(query, { quantity: quantity, item_id: product}, function(err, res) {
-    if (err) throw err;
-    console.log(res);
-}) 
-};
+                });
+
+            });
+    });
+}
